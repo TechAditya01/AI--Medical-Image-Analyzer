@@ -2,104 +2,190 @@ import streamlit as st
 import base64
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
-import tempfile
+import google.generativeai as genai
 
+# Load environment variables
 load_dotenv()
 
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+# Configure the Google API client
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-client = OpenAI()
-
-sample_prompt = """You are a medical practictioner and an expert in analzying medical related images working for a very reputed hospital. You will be provided with images and you need to identify the anomalies, any disease or health issues. You need to generate the result in detailed manner. Write all the findings, next steps, recommendation, etc. You only need to respond if the image is related to a human body and health issues. You must have to answer but also write a disclaimer saying that "Consult with a Doctor before making any decisions".
-
-Remember, if certain aspects are not clear from the image, it's okay to state 'Unable to determine based on the provided image.'
-
-Now analyze the image and answer the above questions in the same structured manner defined above."""
-
-# Initialize session state variables
-if 'uploaded_file' not in st.session_state:
-    st.session_state.uploaded_file = None
-if 'result' not in st.session_state:
-    st.session_state.result = None
+# Sample prompt for medical image analysis
+sample_prompt = """
+You are a medical assistant. Analyze this medical image and provide the following:
+1. What condition or issue is shown in the image?
+2. What are the key observations?
+3. What might be potential treatments or next steps?
+4. Are there any concerning features that require immediate attention?
+"""
 
 def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
 def call_gpt4_model_for_analysis(filename: str, sample_prompt=sample_prompt):
-    base64_image = encode_image(filename)
+    # Load the image
+    image_data = open(filename, "rb").read()
     
-    messages = [
-        {
-            "role": "user",
-            "content":[
-                {
-                    "type": "text", "text": sample_prompt
-                    },
-                {
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{base64_image}",
-                        "detail": "high"
-                        }
-                    }
-                ]
-            }
-        ]
-
-    response = client.chat.completions.create(
-        model = "gpt-4-vision-preview",
-        messages = messages,
-        max_tokens = 1500
-        )
-
-    print(response.choices[0].message.content)
-    return response.choices[0].message.content
+    # Create a model instance with the updated model name
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # Generate content
+    response = model.generate_content([
+        sample_prompt,
+        {"mime_type": "image/jpeg", "data": image_data}
+    ])
+    
+    print(response.text)
+    return response.text
 
 def chat_eli(query):
     eli5_prompt = "You have to explain the below piece of information to a five years old. \n" + query
-    messages = [
-        {
-            "role": "user",
-            "content": eli5_prompt
+    
+    # Create a model instance for text-only generation with updated model
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    # Generate content
+    response = model.generate_content(eli5_prompt)
+    
+    return response.text
+
+# Custom CSS for better styling
+def local_css():
+    st.markdown("""
+    <style>
+        :root {
+            --primary-color: #8a56e8;
+            --secondary-color: #f0e6ff;
+            --text-color: #333333;
         }
-    ]
+        
+        .main {
+            background-color: var(--secondary-color);
+        }
+        
+        .stApp {
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        
+        /* Sidebar styling */
+        section[data-testid="stSidebar"] {
+            background-color: #4a2a82; /* Dark purple color */
+            padding: 2rem 1rem;
+            color: white; /* Text color for better contrast */
+        }
+        
+        /* Make sidebar text white for better visibility */
+        section[data-testid="stSidebar"] h1, 
+        section[data-testid="stSidebar"] p,
+        section[data-testid="stSidebar"] .stMarkdown {
+            color: white;
+        }
+        
+        /* Header styling */
+        h1 {
+            color: var(--primary-color);
+            font-weight: 700;
+            margin-bottom: 1rem;
+        }
+        
+        h3 {
+            color: var(--primary-color);
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        /* Button styling */
+        .stButton button {
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 5px;
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            border: none;
+        }
+        
+        .stButton button:hover {
+            background-color: #7040c0;
+        }
+        
+        /* Footer */
+        .footer {
+            margin-top: 3rem;
+            text-align: center;
+            color: #6c757d;
+            font-size: 0.9rem;
+            padding: 1rem;
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=messages,
-        max_tokens=1500
-    )
+# Streamlit UI
+st.set_page_config(
+    page_title="HealSmart", 
+    page_icon="❤️",
+    layout="wide"
+)
 
-    return response.choices[0].message.content
+# Apply custom CSS
+local_css()
 
-st.title("Medical Help using Multimodal LLM")
+# Sidebar
+with st.sidebar:
+    st.markdown("# ❤️ HealSmart")
+    st.markdown("---")
+    st.markdown("🏠 Home")
+    st.markdown("🔍 Medical Image Analysis")
 
-with st.expander("About this App"):
-    st.write("Upload an image to get an analysis from GPT-4.")
+# Main content
+st.title("Medical Image Analyzer")
+st.markdown("Upload your medical images and get instant AI analysis with simplified explanations.")
 
-uploaded_file = st.file_uploader("Upload an Image", type=["jpg", "jpeg", "png"])
+# Main upload section
+st.header("Upload Medical Image")
+st.markdown("Select a medical image (X-ray, MRI, CT scan, etc.) for AI analysis")
 
-# Temporary file handling
+uploaded_file = st.file_uploader("", type=["jpg", "jpeg", "png"])
+
 if uploaded_file is not None:
-    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
-        tmp_file.write(uploaded_file.getvalue())
-        st.session_state['filename'] = tmp_file.name
+    # Display the uploaded image
+    st.header("Uploaded Image")
+    st.image(uploaded_file, caption="", use_container_width=True)
+    
+    # Save the uploaded file temporarily
+    with open("temp_image.jpg", "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    # Create two columns for buttons
+    col1, col2 = st.columns(2)
+    
+    # Analysis button in first column
+    analyze_button = col1.button("🔍 Analyze Image")
+    
+    # Store analysis results in session state so they persist
+    if "analysis_results" not in st.session_state:
+        st.session_state.analysis_results = None
+    
+    # Analyze the image when button is clicked
+    if analyze_button:
+        with st.spinner("Analyzing medical image..."):
+            analysis = call_gpt4_model_for_analysis("temp_image.jpg")
+            st.session_state.analysis_results = analysis
+            st.header("Medical Analysis")
+            st.markdown(analysis)
+    
+    # Show the ELI5 button if we have analysis results
+    if st.session_state.analysis_results is not None:
+        # ELI5 button in second column
+        eli5_button = col2.button("👶 Explain Simply")
+        if eli5_button:
+            with st.spinner("Creating simplified explanation..."):
+                simple_explanation = chat_eli(st.session_state.analysis_results)
+                st.header("Simplified Explanation")
+                st.markdown(simple_explanation)
 
-    st.image(uploaded_file, caption='Uploaded Image')
-
-# Process button
-if st.button('Analyze Image'):
-    if 'filename' in st.session_state and os.path.exists(st.session_state['filename']):
-        st.session_state['result'] = call_gpt4_model_for_analysis(st.session_state['filename'])
-        st.markdown(st.session_state['result'], unsafe_allow_html=True)
-        os.unlink(st.session_state['filename'])  # Delete the temp file after processing
-
-# ELI5 Explanation
-if 'result' in st.session_state and st.session_state['result']:
-    st.info("Below you have an option for ELI5 to understand in simpler terms.")
-    if st.radio("ELI5 - Explain Like I'm 5", ('No', 'Yes')) == 'Yes':
-        simplified_explanation = chat_eli(st.session_state['result'])
-        st.markdown(simplified_explanation, unsafe_allow_html=True)
-             
+# Footer
+st.markdown("---")
+st.markdown("<div class='footer'>HealSmart © 2024 | Powered by Gemini AI</div>", unsafe_allow_html=True)
